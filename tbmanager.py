@@ -101,7 +101,6 @@ class TasksBaseManager(object):
             print("ERROR! Given section: {0} does not exist!".format(sec))
     
     def add_task(self, sec, subsec, fn, sol_fn, num=None):
-        num -= 1
         tfn = os.path.join(Config.root_dir, fn) + Config.tsk_ext
         sfn = os.path.join(Config.root_dir, sol_fn) + Config.sol_ext
         with open(tfn, "r") as f:
@@ -114,11 +113,12 @@ class TasksBaseManager(object):
             self._add_section(sec)
         subsec_dct = self.tasks_config[sec].get(subsec)
         if subsec_dct is None:
-            self._add_subsection(subsec)
+            self._add_subsection(sec, subsec)
         if num is None:
             self.tasks_config[sec][subsec].append({"treść": content, "nazwa": name})
             n = len(self.tasks_config[sec][subsec])
         else:
+            num -= 1
             self.tasks_config[sec][subsec][num:num] = [{"treść": content, "nazwa": name}]
             self._rename_files(Config.task_dir, sec, subsec, num)
             self._rename_files(Config.solv_dir, sec, subsec, num)
@@ -222,11 +222,13 @@ class TasksBaseManager(object):
         return num
     
     def _add_section(self, sec):
-        os.makedir(os.path.join(Config.tasks_dir, sec))
+        os.makedirs(os.path.join(Config.task_dir, sec))
+        os.makedirs(os.path.join(Config.solv_dir, sec))
         self.tasks_config[sec] = {}
         
     def _add_subsection(self, sec, subsec):
-        os.makedir(os.path.join(Config.tasks_dir, sec, subsec))
+        os.makedirs(os.path.join(Config.task_dir, sec, subsec))
+        os.makedirs(os.path.join(Config.solv_dir, sec, subsec))
         self.tasks_config[sec][subsec] = []
         
 if __name__ == "__main__":
@@ -246,7 +248,7 @@ if __name__ == "__main__":
         tm.create_pdf_sec(sys.argv[2])
     if typ == "dodaj":
         if len(sys.argv) < 6:
-            print("ERROR! Podaj sekcję, podsekcję, plik z zadaniem i plik z rozwiązaniem")
+            print("ERROR! Podaj sekcję, podsekcję, plik z zadaniem i plik z rozwiązaniem oraz numer zadania")
         else:
             sec = sys.argv[2]
             subsec = sys.argv[3]
@@ -256,7 +258,8 @@ if __name__ == "__main__":
                 num=int(sys.argv[6])
                 print(num)
                 tm.add_task(sec, subsec, zad, rozw, num)
-            tm.add_task(sec, subsec, zad, rozw)
+            else:
+                tm.add_task(sec, subsec, zad, rozw)
     if typ == "przenumeruj":
         if len(sys.argv) < 6:
             print("ERROR! Podaj sekcję, podsekcję, numer stary i numer nowy")
