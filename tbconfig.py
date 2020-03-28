@@ -2,13 +2,13 @@
 import os
 
 class Config(object):
-    root_dir = 'C:\\Users\\User\\Repos\\baza_zadan'
-    tmp_dir = 'C:\\Users\\User\\Repos\\baza_zadan\\tmp'
+    root_dir = 'C:\\Users\\krisu\\Repos\\baza_zadan'
+    tmp_dir = 'C:\\Users\\krisu\\Repos\\baza_zadan\\tmp'
     task_dir = os.path.join(root_dir, "zadania")
     solv_dir = os.path.join(root_dir, "rozwiązania")
     file_config = {"preamble_len": 4,
-                   "preamble_text": [r"\documentclass{article}", 
-                                     r"\usepackage{polski}", 
+                   "preamble_text": [r"\documentclass{article}",
+                                     r"\usepackage{polski}",
                                      r"\usepackage[utf8]{inputenc}",
                                      r"\usepackage{graphicx}",
                                      r"\usepackage{amsmath}",
