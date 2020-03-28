@@ -34,7 +34,8 @@ class TasksBaseManager(object):
                 tex_file.append(r"\subsection{{ {0} }}".format(subsection))
                 for i, task in enumerate(subsection_tasks):
                     tex_file.append(r"\textbf{{Zadanie {0}}} \\".format(i+1))
-                    tex_file += [x + r"\\" for x in task["treść"]]
+                    #tex_file += [x + r"\\" for x in task["treść"]]
+                    tex_file += task["treść"]
         tex_file += Config.file_config["end_text"]
         fn = os.path.join(odir, fn + Config.tsk_ext)
         print("Compiling latex ...")
@@ -56,7 +57,8 @@ class TasksBaseManager(object):
                 tex_file.append(r"\subsection{{ {0} }}".format(subsec))
                 for task_num in subsection_tasks:
                     tex_file.append(r"\textbf{{Zadanie {0}}} \\".format(task_num))
-                    tex_file += [x + r"\\" for x in self.tasks_config[sec][subsec][task_num-1]["treść"]]
+                    #tex_file += [x + r"\\" for x in self.tasks_config[sec][subsec][task_num-1]["treść"]]
+                    tex_file += self.tasks_config[sec][subsec][task_num-1]["treść"]
         tex_file += Config.file_config["end_text"]
         if fn == "zadania":
             out_fn = os.path.join(odir, "{0}_{1}{2}".format(fn, randrange(10000), Config.tsk_ext))
@@ -82,7 +84,8 @@ class TasksBaseManager(object):
                 tex_file.append(r"\subsection{{ {0} }}".format(subsec))
                 for i, task in enumerate(subsection_tasks):
                     tex_file.append(r"\textbf{{Zadanie {0}}} \\".format(i+1))
-                    tex_file += [x + r"\\" for x in task["treść"]]
+                    #tex_file += [x + r"\\" for x in task["treść"]]
+                    tex_file += task["treść"]
             tex_file += Config.file_config["end_text"]
             if fn == "zadania":
                 out_fn = os.path.join(odir, "{0}_{1}_{2}{3}".format(fn, sec, randrange(10000), Config.tsk_ext))
@@ -103,10 +106,10 @@ class TasksBaseManager(object):
     def add_task(self, sec, subsec, fn, sol_fn, num=None):
         tfn = os.path.join(Config.root_dir, fn) + Config.tsk_ext
         sfn = os.path.join(Config.root_dir, sol_fn) + Config.sol_ext
-        with open(tfn, "r") as f:
+        with open(tfn, "r", encoding="utf-8") as f:
             content = f.readlines()
-        name = fn.split(os.sep)[-1]
-        sol_name = sol_fn.split(os.sep)[-1]
+        name = fn#.split(os.sep)[-1]
+        sol_name = sol_fn#.split(os.sep)[-1]
         assert name + "-sol" == sol_name
         sec_dct = self.tasks_config.get(sec)
         if sec_dct is None:
@@ -137,7 +140,7 @@ class TasksBaseManager(object):
                 sorted_tasks = sorted(tasks, key=self._sort_files_key)
                 for i, task in enumerate(sorted_tasks):
                     task_fn = os.path.join(Config.task_dir, sec, subsec, task)
-                    with open(task_fn, "r") as f:
+                    with open(task_fn, "r", encoding="utf-8") as f:
                         content = f.readlines()
                     try:
                         num = int(task.split("_")[0])
@@ -247,15 +250,15 @@ if __name__ == "__main__":
     if typ == "sekcja":
         tm.create_pdf_sec(sys.argv[2])
     if typ == "dodaj":
-        if len(sys.argv) < 6:
-            print("ERROR! Podaj sekcję, podsekcję, plik z zadaniem i plik z rozwiązaniem oraz numer zadania")
+        if len(sys.argv) < 5:
+            print("ERROR! Podaj sekcję, podsekcję, plik z zadaniem oraz numer zadania")
         else:
             sec = sys.argv[2]
             subsec = sys.argv[3]
             zad = sys.argv[4]
-            rozw = sys.argv[5]
-            if len(sys.argv) > 6:
-                num=int(sys.argv[6])
+            rozw = zad + "-sol"
+            if len(sys.argv) > 5:
+                num=int(sys.argv[5])
                 print(num)
                 tm.add_task(sec, subsec, zad, rozw, num)
             else:
