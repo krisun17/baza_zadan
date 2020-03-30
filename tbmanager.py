@@ -8,272 +8,305 @@ import codecs
 from random import randrange
 from tbconfig import Config
 import sys
-    
-class TasksBaseManager(object):
-    
-    def __init__(self, from_file=False, from_dirs=False, from_dict=False, dct={}):
-                
-        assert from_file or from_dirs or from_dict
-        assert (from_dict == True and dct != {}) or from_dict == False
-        if from_file:
-            with open(Config.tasks_config_file, "rb") as f:
-                a = f.read()
-                self.tasks_config = json.loads(a)
-        else:
-            if from_dirs:
-                self.tasks_config = {}
-                self.update_config_from_dirs()
+from datetime import datetime, date
+import argparse
+
+ENCODING = 'utf-8'
+
+def read_tasks_config():
+    with open(Config.tasks_config_file, "r") as f:
+        config_all = json.loads(f.read())
+    return config_all
+
+def write_tasks_config(cfg):
+    with open(Config.tasks_config_file, "w") as f:
+        f.write(json.dumps(cfg))
+
+def create_pdf(config, outfn, constraints={}):
+    # outfn must not contain "."
+
+    operators_dict = {"=": lambda x, y: x == y,
+                      ">": lambda x, y: x > y,
+                      ">=": lambda x, y: x >= y,
+                      "<": lambda x, y: x < y,
+                      "<=": lambda x, y: x <= y}
+
+    def is_constraint_fulfilled(task):
+        for c_key, c_tup in constraints.items():
+            c_val, c_op = c_tup
+            t_val = task["atrybuty"].get(c_key)
+            if t_val is None or not operators_dict[c_op](t_val, int(c_val)):
+                return False
+        return True
+
+    def create_tex(tasks_config):
+
+        def is_one_section():
+            if len(tasks_config.keys()) == 1:
+                return True
+            return len(config.keys()) == 1
+
+        def is_el_in_config(cfg, el, el_default={}):
+            if type(cfg) == dict:
+                return cfg.get(el) is not None or cfg == el_default
+            if type(cfg) == list:
+                return el in cfg or cfg == el_default
+
+        def add_section(tex_file, sec_name):
+            if not is_one_section():
+                tex_file.append(r"\section{{ {0} }}".format(sec_name))
+
+        def add_subsection(tex_file, subsec_name):
+            if is_one_section():
+                tex_file.append(r"\section{{ {0} }}".format(subsec_name))
             else:
-                self.tasks_config = dct
-        
-    def create_pdf_all(self, fn="zadania_wszystkie", odir=Config.tmp_dir):
+                tex_file.append(r"\subsection{{ {0} }}".format(subsec_name))
+
+        def add_task(tex_file, task, sec_i, subs_i, task_num):
+            if is_constraint_fulfilled(task):
+                if is_one_section():
+                    tex_file.append(r"\textbf{{Zadanie {0}.{1}}} \\".format(
+                        subs_i+1, task_num))
+                else:
+                    tex_file.append(r"\textbf{{Zadanie {0}.{1}.{2}}} \\".format(
+                        sec_i+1, subs_i+1, task_num))
+                tex_file += task["treść"]
+                tex_file.append(r"~\\")
+
+        # TODO not print sec if tasks filtered
         tex_file = deepcopy(Config.file_config["preamble_text"])
-        for section, section_tasks in self.tasks_config.items():
-            tex_file.append(r"\section{{ {0} }}".format(section))
-            for subsection, subsection_tasks in section_tasks.items():
-                tex_file.append(r"\subsection{{ {0} }}".format(subsection))
-                for i, task in enumerate(subsection_tasks):
-                    tex_file.append(r"\textbf{{Zadanie {0}}} \\".format(i+1))
-                    #tex_file += [x + r"\\" for x in task["treść"]]
-                    tex_file += task["treść"]
+        for sec_i, (sec_name, sec_tasks) in enumerate(tasks_config.items()):
+            if is_el_in_config(config, sec_name):
+                add_section(tex_file, sec_name)
+                act_sec_cfg = config.get(sec_name, {})
+                for subs_i, (subs_name, subs_tasks) in enumerate(sec_tasks.items()):
+                    if is_el_in_config(act_sec_cfg, subs_name):
+                        add_subsection(tex_file, subs_name)
+                        act_subsec_cfg = act_sec_cfg.get(subs_name, [])
+                        for task_i, task in enumerate(subs_tasks):
+                            task_num = task_i + 1
+                            if is_el_in_config(act_subsec_cfg, task_num, []):
+                                add_task(tex_file, task, sec_i, subs_i, task_num)
         tex_file += Config.file_config["end_text"]
-        fn = os.path.join(odir, fn + Config.tsk_ext)
+        return tex_file
+
+
+    def compile_latex(tex_file):
+        fn = os.path.join(Config.tmp_dir, outfn + Config.tsk_ext)
         print("Compiling latex ...")
-        with codecs.open(fn, "w", "utf-8") as f:
+        with codecs.open(fn, "w", encoding=ENCODING) as f:
             f.writelines("\n".join(tex_file))
-        res = os.system("pdflatex -output-directory={0} {1}".format(odir, fn))
+        res = os.system("pdflatex -output-directory={0} {1}".format(
+            Config.tmp_dir, fn))
         if res is not None:
             print("DONE!")
         else:
             print("ERROR! Check logs for details")
-        self._clean_files(odir)
-    
-    def create_pdf(self, tasks, fn="zadania", odir=Config.tmp_dir):
-        os.chdir(odir)
-        tex_file = deepcopy(Config.file_config["preamble_text"])
-        for sec, section_tasks in tasks.items():
-            tex_file.append(r"\section{{ {0} }}".format(sec))
-            for subsec, subsection_tasks in section_tasks.items():
-                tex_file.append(r"\subsection{{ {0} }}".format(subsec))
-                for task_num in subsection_tasks:
-                    tex_file.append(r"\textbf{{Zadanie {0}}} \\".format(task_num))
-                    #tex_file += [x + r"\\" for x in self.tasks_config[sec][subsec][task_num-1]["treść"]]
-                    tex_file += self.tasks_config[sec][subsec][task_num-1]["treść"]
-        tex_file += Config.file_config["end_text"]
-        if fn == "zadania":
-            out_fn = os.path.join(odir, "{0}_{1}{2}".format(fn, randrange(10000), Config.tsk_ext))
-        else:
-            out_fn = os.path.join(odir, "{0}{1}".format(fn, Config.tsk_ext))
-        print("Compiling latex ...")
-        with codecs.open(out_fn, "w", "utf-8") as f:
-            f.writelines("\n".join(tex_file))
-        res = os.system("pdflatex -output-directory={0} {1}".format(odir, out_fn))
-        if res is not None:
-            print("DONE!")
-        else:
-            print("ERROR! Check logs for details") 
-        self._clean_files(odir)
-        
-    def create_pdf_sec(self, sec, fn="zadania", odir=Config.tmp_dir):
-        os.chdir(odir)
-        tex_file = deepcopy(Config.file_config["preamble_text"])
-        section_tasks = self.tasks_config.get(sec)
-        if section_tasks is not None:
-            tex_file.append(r"\section{{ {0} }}".format(sec))
-            for subsec, subsection_tasks in section_tasks.items():
-                tex_file.append(r"\subsection{{ {0} }}".format(subsec))
-                for i, task in enumerate(subsection_tasks):
-                    tex_file.append(r"\textbf{{Zadanie {0}}} \\".format(i+1))
-                    #tex_file += [x + r"\\" for x in task["treść"]]
-                    tex_file += task["treść"]
-            tex_file += Config.file_config["end_text"]
-            if fn == "zadania":
-                out_fn = os.path.join(odir, "{0}_{1}_{2}{3}".format(fn, sec, randrange(10000), Config.tsk_ext))
-            else:
-                out_fn = os.path.join(odir, "{0}{1}".format(fn, Config.tsk_ext))
-            print("Compiling latex ...")
-            with codecs.open(out_fn, "w", "utf-8") as f:
-                f.writelines("\n".join(tex_file))
-            res = os.system("pdflatex -output-directory={0} {1}".format(odir, out_fn))
-            if res is not None:
-                print("DONE!")
-            else:
-                print("ERROR! Check logs for details") 
-            self._clean_files(odir)
-        else:
-            print("ERROR! Given section: {0} does not exist!".format(sec))
-    
-    def add_task(self, sec, subsec, fn, sol_fn, num=None):
-        tfn = os.path.join(Config.root_dir, fn) + Config.tsk_ext
-        sfn = os.path.join(Config.root_dir, sol_fn) + Config.sol_ext
-        with open(tfn, "r", encoding="utf-8") as f:
-            content = f.readlines()
-        name = fn#.split(os.sep)[-1]
-        sol_name = sol_fn#.split(os.sep)[-1]
-        assert name + "-sol" == sol_name
-        sec_dct = self.tasks_config.get(sec)
-        if sec_dct is None:
-            self._add_section(sec)
-        subsec_dct = self.tasks_config[sec].get(subsec)
-        if subsec_dct is None:
-            self._add_subsection(sec, subsec)
-        if num is None:
-            self.tasks_config[sec][subsec].append({"treść": content, "nazwa": name})
-            n = len(self.tasks_config[sec][subsec])
-        else:
-            num -= 1
-            self.tasks_config[sec][subsec][num:num] = [{"treść": content, "nazwa": name}]
-            self._rename_files(Config.task_dir, sec, subsec, num)
-            self._rename_files(Config.solv_dir, sec, subsec, num)
-            n = num+1
-        task_fn = os.path.join(Config.task_dir, sec, subsec, "{0}_{1}{2}".format(n, name, Config.tsk_ext))
-        shutil.move(tfn, task_fn)
-        sol_new_fn = os.path.join(Config.solv_dir, sec, subsec, "{0}_{1}{2}".format(n, sol_name, Config.sol_ext))
-        shutil.move(sfn, sol_new_fn)
-            
-    def update_config_from_dirs(self):
-        for sec in os.listdir(Config.task_dir):
-            self.tasks_config[sec] = {}
-            for subsec in os.listdir(os.path.join(Config.task_dir, sec)):
-                self.tasks_config[sec][subsec] = []
-                tasks = os.listdir(os.path.join(Config.task_dir, sec, subsec))
-                sorted_tasks = sorted(tasks, key=self._sort_files_key)
-                for i, task in enumerate(sorted_tasks):
-                    task_fn = os.path.join(Config.task_dir, sec, subsec, task)
-                    with open(task_fn, "r", encoding="utf-8") as f:
-                        content = f.readlines()
-                    try:
-                        num = int(task.split("_")[0])
-                        name = task.split("_")[1].split(".")[0]
-                    except Exception as e:
-                        name = task.split("_")[0].split(".")[0]
-                    self.tasks_config[sec][subsec].append({"treść": content, "nazwa": name})
-                    new_fn = os.path.join(Config.task_dir, sec, subsec, "{0}_{1}{2}".format(i+1, name, Config.tsk_ext))
-                    os.rename(task_fn, new_fn)
-        for sec in os.listdir(Config.solv_dir):
-            for subsec in os.listdir(os.path.join(Config.solv_dir, sec)):
-                solvs = os.listdir(os.path.join(Config.solv_dir, sec, subsec))
-                sorted_solvs = sorted(solvs, key=self._sort_files_key)
-                for i, solv in enumerate(sorted_solvs):
-                    solv_fn = os.path.join(Config.solv_dir, sec, subsec, solv)
-                    try:
-                        num = int(solv.split("_")[0])
-                        name = solv.split("_")[1].split(".")[0]
-                    except Exception as e:
-                        name = solv.split("_")[0].split(".")[0]
-                    new_fn = os.path.join(Config.solv_dir, sec, subsec, "{0}_{1}{2}".format(i+1, name, Config.sol_ext))
-                    os.rename(solv_fn, new_fn)
-        self._update_cfg()
-                    
-    def rename_numbers(self, sec, subsec, old_num, new_num):
-        self.tasks_config[sec][subsec].insert(new_num-1, self.tasks_config[sec][subsec].pop(old_num-1))
-        if new_num > old_num:
-            step=-1
-            num = old_num + 1
-            max_num = new_num + 1
-        else:
-            step = 1
-            num = new_num
-            max_num = old_num
-        self._rename_files(Config.task_dir, sec, subsec, num, step=step, max_num=max_num)
-        self._rename_files(Config.solv_dir, sec, subsec, num, step=step, max_num=max_num)
-        name = self.tasks_config[sec][subsec][new_num-1]["nazwa"]
-        old_n = "{0}_{1}".format(old_num, name)
-        new_n = "{0}_{1}".format(new_num, name)
-        old_fn = os.path.join(Config.task_dir, sec, subsec, old_n + Config.tsk_ext)
-        new_fn = os.path.join(Config.task_dir, sec, subsec, new_n + Config.sol_ext)
-        print("old: " + old_fn)
-        print("new: " + new_fn)
-        os.rename(old_fn, new_fn)
-        old_fn = os.path.join(Config.solv_dir, sec, subsec, old_n + "-sol" + Config.tsk_ext)
-        new_fn = os.path.join(Config.solv_dir, sec, subsec, new_n + "-sol" + Config.sol_ext)
-        print("old: " + old_fn)
-        print("new: " + new_fn)
-        os.rename(old_fn, new_fn)
-    
-    def _update_cfg(self):
-        with open(Config.tasks_config_file, "w", encoding='utf8') as f:
-            json.dump(self.tasks_config, f)
-            
-    def _rename_files(self, tdir, sec, subsec, num, step=1, max_num=None):
-        for task in os.listdir(os.path.join(tdir, sec, subsec)):
-            tnr = int(task.split("_")[0])
-            if tnr >= num:
-                if max_num is None or tnr < max_num:
-                    new_t = "{0}_{1}".format(tnr+step, task.split("_")[1])
-                    old_fn = os.path.join(tdir, sec, subsec, task)
-                    new_fn = os.path.join(tdir, sec, subsec, new_t)
-                    print("old: " + old_fn)
-                    print("new: " + new_fn)
-                    os.rename(old_fn, new_fn)
-        
-    def _clean_files(self, dr):
+
+    def clean_files():
         print("cleaning ...")
-        for fn in os.listdir(dr):
+        for fn in os.listdir(Config.tmp_dir):
             for ext in Config.to_clean_ext:
                 if fn.endswith(ext):
-                    out_fn = os.path.join(dr, fn)
                     print("Removing {0} ...".format(fn))
-                    os.remove(out_fn)
-                    
-    def _sort_files_key(self, x):
-        name = x.split("_")
-        try:
-            num = int(x[0])
-        except Exception as e:
-            num = x[0]
-        return num
-    
-    def _add_section(self, sec):
-        os.makedirs(os.path.join(Config.task_dir, sec))
-        os.makedirs(os.path.join(Config.solv_dir, sec))
-        self.tasks_config[sec] = {}
-        
-    def _add_subsection(self, sec, subsec):
-        os.makedirs(os.path.join(Config.task_dir, sec, subsec))
-        os.makedirs(os.path.join(Config.solv_dir, sec, subsec))
-        self.tasks_config[sec][subsec] = []
-        
-if __name__ == "__main__":
-    tm = TasksBaseManager(from_dirs=True)
-    typ = sys.argv[1]
-    #print(typ)
-    if typ == "wszystko":
-        tm.create_pdf_all()
-    if typ == "generuj":
-        with open("zadania.json", "rb") as f:
-            a = f.read()
-            config = json.loads(a)
-        if len(sys.argv) > 2:
-            tm.create_pdf(config, fn=sys.argv[2])
-        tm.create_pdf(config)
-    if typ == "sekcja":
-        tm.create_pdf_sec(sys.argv[2])
-    if typ == "dodaj":
-        if len(sys.argv) < 5:
-            print("ERROR! Podaj sekcję, podsekcję, plik z zadaniem oraz numer zadania")
-        else:
-            sec = sys.argv[2]
-            subsec = sys.argv[3]
-            zad = sys.argv[4]
-            rozw = zad + "-sol"
-            if len(sys.argv) > 5:
-                num=int(sys.argv[5])
-                print(num)
-                tm.add_task(sec, subsec, zad, rozw, num)
+                    os.remove(os.path.join(Config.tmp_dir, fn))
+
+    compile_latex(create_tex(read_tasks_config()))
+    clean_files()
+
+def update_config():
+
+    def sort_tasks_key(name):
+        return int(name.split("_")[0])
+
+    new_config = read_tasks_config()
+    for sec in os.listdir(Config.task_dir):
+        for subsec in os.listdir(os.path.join(Config.task_dir, sec)):
+            sorted_tasks = sorted(os.listdir(os.path.join(Config.task_dir, sec, subsec)),
+                                  key=sort_tasks_key)
+            for i, task in enumerate(sorted_tasks):
+                task_fn = os.path.join(Config.task_dir, sec, subsec, task)
+                with open(task_fn, "r", encoding=ENCODING) as f:
+                    content = f.readlines()
+                new_config[sec][subsec][i]["treść"] = content
+                if new_config[sec][subsec][i].get("atrybuty") is None:
+                    new_config[sec][subsec][i]["atrybuty"] = {}
+    write_tasks_config(new_config)
+
+def update_atrs(new_atrs):
+    new_config = read_tasks_config()
+    for sec_name, sec_atrs in new_atrs.items():
+        for subs_name, subs_atrs in sec_atrs.items():
+            for t_num, atrs in subs_atrs.items():
+                t_i = int(t_num) - 1
+                for c_key, c_val in atrs.items():
+                    new_config[sec_name][subs_name][t_i]["atrybuty"][c_key] = c_val
+    write_tasks_config(new_config)
+
+def get_task_fname(name, sec, subsec, num, sol=False):
+    suf = "-sol" + Config.sol_ext if sol else Config.tsk_ext
+    base_dir = Config.solv_dir if sol else Config.task_dir
+    tname = "{0}_{1}{2}".format(num, name, suf)
+    return os.path.join(base_dir, sec, subsec, tname)
+
+def rename_num(tn, sec, subsec, old_num, new_num):
+    os.rename(get_task_fname(tn, sec, subsec, old_num),
+              get_task_fname(tn, sec, subsec, new_num))
+    os.rename(get_task_fname(tn, sec, subsec, old_num, sol=True),
+              get_task_fname(tn, sec, subsec, new_num, sol=True))
+
+def add_task(sec, subsec, tname, num=None, atrs={}):
+
+    def add_sec_and_subsec(new_config):
+        if new_config.get(sec) is None:
+            new_config[sec] = {}
+            os.makedirs(os.path.join(Config.task_dir, sec))
+            os.makedirs(os.path.join(Config.solv_dir, sec))
+        if new_config[sec].get(subsec) is None:
+            os.makedirs(os.path.join(Config.task_dir, sec, subsec))
+            os.makedirs(os.path.join(Config.solv_dir, sec, subsec))
+            new_config[sec][subsec] = []
+        return new_config
+
+    new_config = add_sec_and_subsec(read_tasks_config())
+    tfn = os.path.join(Config.root_dir, tname) + Config.tsk_ext
+    sfn = os.path.join(Config.root_dir, tname + "-sol") + Config.sol_ext
+    tasks_num = len(new_config[sec][subsec])
+    with open(tfn, "r", encoding=ENCODING) as f:
+        content = f.readlines()
+    task_conf = {"treść": content, "nazwa": tname, "atrybuty": atrs}
+    if num is None or num > tasks_num:
+        new_config[sec][subsec].append(task_conf)
+        idx = tasks_num
+    else:
+        idx = num - 1
+        for i in range(idx, task_num):
+            rename_num(new_config[sec][subsec][i], sec, subsec, i+1, i+2)
+        new_config[sec][subsec][idx:idx] = [task_conf]
+    shutil.move(tfn, get_task_fname(tname, sec, subsec, idx))
+    shutil.move(sfn, get_task_fname(tname, sec, subsec, idx, sol=True))
+    write_tasks_config(new_config)
+
+def rename_tasks(sec, subsec, old_num, new_num):
+    new_config = read_tasks_config()
+    idx_new = new_num - 1
+    idx_old = old_num - 1
+    rename_num(new_config[sec][subsec][idx_old], sec, subsec, old_num, new_num)
+    step = 1 if new_num < old_num else -1
+    for i in range(idx_new, idx_old, step):
+        rename_num(new_config[sec][subsec][i], sec, subsec, i + 1, i + 1 + step)
+    new_config[sec][subsec].insert(idx_new, new_config[sec][subsec].pop(idx_old))
+    write_tasks_config(new_config)
+
+
+class BaseRunner(object):
+
+    def __init__(self):
+        parser = argparse.ArgumentParser(
+            description='Wiersz poleceń bazy zadań Anulki',
+            usage='''python tbmanager.py <command> [<args>]
+
+            Dopuszczalne komendy:
+               generuj        Generuje zadania na podstawie konfiguracji
+               sekcja         Generuje zadania tylko z danej sekcji
+               dodaj          Dodaje zadania
+               dodaj_atrybuty Dodaj atrybuty do zadań
+               przenumeruj    Przenumerowuje zadanie
+            ''')
+        parser.add_argument('command', help='Subcommand to run')
+        # parse_args defaults to [1:] for args, but you need to
+        # exclude the rest of the args too, or validation will fail
+        args = parser.parse_args(sys.argv[1:2])
+        if not hasattr(self, args.command):
+            print('Unrecognized command')
+            parser.print_help()
+            exit(1)
+        # use dispatch pattern to invoke method with same name
+        getattr(self, args.command)()
+
+    def generuj(self):
+
+        def get_date():
+            return datetime.now().strftime("%Y%m%d%H%M")
+
+        parser = argparse.ArgumentParser(
+            description='Generuje zadania na podstawie konfiguracji')
+        parser.add_argument('--zadania', help='plik z konfiguracją zadań, domyślnie wszystko')
+        parser.add_argument('--atrybuty', help='plik z atrybutami, domyślnie wszystko')
+        parser.add_argument('--output', help='nazwa pliku wyjściowego, nie może zawierać kropki')
+        args = parser.parse_args(sys.argv[2:])
+        out = "zadania_{0}".format(get_date()) if  args.output is None else args.output
+        zad = {} if args.zadania is None else self._load_config(args.zadania)
+        atrs = {} if args.atrybuty is None else self._load_atrs(args.atrybuty)
+        print('Running generuj zadania={0} atrybuty={1} output={2}'.format(zad, atrs, out))
+        create_pdf(zad, out, constraints=atrs)
+
+    def sekcja(self):
+        parser = argparse.ArgumentParser(
+            description='Generuje zadania tylko z danej sekcji')
+
+        parser.add_argument('rozdzial', help='nazwa rozdziału, obowiązkowa')
+        parser.add_argument('--atrybuty', help='plik z atrybutami, domyślnie wszystko')
+        parser.add_argument('--output', help='nazwa pliku wyjściowego, nie może zawierać kropki')
+        args = parser.parse_args(sys.argv[2:])
+        out = "zadania_{0}".format(args.rozdzial) if  args.output is None else args.output
+        atrs = {} if args.atrybuty is None else self._load_atrs(args.atrybuty)
+        print('Running sekcja sekcja={0} atrybuty={1} output={2}'.format(args.rozdzial, atrs, out))
+        create_pdf({args.rozdzial: {}}, out, constraints=atrs)
+
+    def dodaj(self):
+        parser = argparse.ArgumentParser(
+            description='Dodaje zadania do bazy')
+
+        parser.add_argument('rozdzial', help='nazwa rozdzialu, obowiązkowa')
+        parser.add_argument('podrozdzial', help='nazwa podrozdziału, obowiązkowa')
+        parser.add_argument('plik', help='nazwa pliku do dodania')
+        parser.add_argument('--numer', help='numer zadania')
+        parser.add_argument('--atrybuty', help='atrybuty zadania', type=str)
+        parser.add_argument('--atrybuty_plik', help='plik do atrybutów zadania')
+        args = parser.parse_args(sys.argv[2:])
+        if args.atrybuty is None:
+            if args.atrybuty_plik is None:
+                atrs = {}
             else:
-                tm.add_task(sec, subsec, zad, rozw)
-    if typ == "przenumeruj":
-        if len(sys.argv) < 6:
-            print("ERROR! Podaj sekcję, podsekcję, numer stary i numer nowy")
+                atrs = self._load_atrs(args.atrybuty_plik)
         else:
-            sec = sys.argv[2]
-            subsec = sys.argv[3]
-            num1 = int(sys.argv[4])
-            num2 = int(sys.argv[5])
-            tm.rename_numbers(sec, subsec, num1, num2)
-        
-        
+            atrs = args.atrybuty
+        print('Running dodaj rozdzial={0} podrozdzial={1} plik={2} numer={3} atrybuty={4}'.format(
+            args.rozdzial, args.podrozdzial, args.plik, args.numer, atrs))
+        add_task(args.rozdzial, args.podrozdzial, args.plik, num=args.numer, atrs=atrs)
 
+    def dodaj_atrybuty(self):
+        parser = argparse.ArgumentParser(
+            description='Dodaje atrybuty do zadań')
 
+        parser.add_argument('plik', help='plik .json z nowymi atrybutami')
+        args = parser.parse_args(sys.argv[2:])
+        atrs = self._load_atrs(args.plik)
+        print('Running dodaj_atrybuty {0}'.format(args.plik))
+        update_atrs(atrs)
 
+    def przenumeruj(self):
+        parser = argparse.ArgumentParser(
+            description='Przenumerowuje zadania')
+
+        parser.add_argument('rozdzial', help='nazwa rozdzialu, obowiązkowa')
+        parser.add_argument('podrozdzial', help='nazwa podrozdziału, obowiązkowa')
+        parser.add_argument('stary_numer', help='stary numer zadania')
+        parser.add_argument('nowy_numer', help='nowy numer zadania')
+        print('Running dodaj rozdzial={0} podrozdzial={1} stary_numer={2} nowy_numer={3}'.format(
+            args.rozdzial, args.podrozdzial, args.stary_numer, args.nowy_numer))
+        rename_tasks(args.rozdzial, args.podrozdzial, int(args.stary_numer), int(args.nowy_numer))
+
+    def _load_config(self, path="zadania.json"):
+        with open(path, "r", encoding=ENCODING) as f:
+            cfg = json.loads(f.read())
+        return cfg
+
+    def _load_atrs(self, path="atrybuty.json"):
+        return self._load_config(path)
+
+# TODO by mozna bylo zmienic nazwe katalogow i plikow
+if __name__ == "__main__":
+    update_config()
+    BaseRunner()
