@@ -183,8 +183,8 @@ def add_task(sec, subsec, tname, num=None, atrs={}):
         for i in range(idx, task_num):
             rename_num(new_config[sec][subsec][i], sec, subsec, i+1, i+2)
         new_config[sec][subsec][idx:idx] = [task_conf]
-    shutil.move(tfn, get_task_fname(tname, sec, subsec, idx))
-    shutil.move(sfn, get_task_fname(tname, sec, subsec, idx, sol=True))
+    shutil.move(tfn, get_task_fname(tname, sec, subsec, idx+1))
+    shutil.move(sfn, get_task_fname(tname, sec, subsec, idx+1, sol=True))
     write_tasks_config(new_config)
 
 def rename_tasks(sec, subsec, old_num, new_num):
@@ -271,7 +271,7 @@ class BaseRunner(object):
             else:
                 atrs = self._load_atrs(args.atrybuty_plik)
         else:
-            atrs = args.atrybuty
+            atrs = json.loads(args.atrybuty)
         print('Running dodaj rozdzial={0} podrozdzial={1} plik={2} numer={3} atrybuty={4}'.format(
             args.rozdzial, args.podrozdzial, args.plik, args.numer, atrs))
         add_task(args.rozdzial, args.podrozdzial, args.plik, num=args.numer, atrs=atrs)
