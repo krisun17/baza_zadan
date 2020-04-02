@@ -13,10 +13,12 @@ class Config(object):
                                      r"\usepackage{graphicx}",
                                      r"\usepackage{amsmath}",
                                      r"\usepackage{geometry}",
+                                     r"\usepackage{float}",
                                      r"\newgeometry{tmargin=1.5cm, bmargin=1.5cm, lmargin=1.5cm, rmargin=1.5cm}",
                                      r"\begin{document}"],
                     "end_text": [r"\end{document}"]}
     tasks_config_file = os.path.join(root_dir, "tasks_config.json")
+    sections_config_file = os.path.join(root_dir, "sections_config.json")
     tsk_ext = ".tex"
     sol_ext = ".pdf"
     to_clean_ext = [".aux", ".toc", ".out", ".snm", ".log"]
